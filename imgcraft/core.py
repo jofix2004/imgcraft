@@ -1,19 +1,30 @@
 # /imgcraft/core.py
+import os
+import sys
+
+# --- KEY FIX ---
+# Thay đổi thư mục làm việc hiện tại sang thư mục gốc của ComfyUI.
+# Điều này cực kỳ quan trọng vì nhiều import nội bộ của ComfyUI
+# giả định rằng chương trình đang được chạy từ đây.
+comfyui_path = '/content/ComfyUI'
+os.chdir(comfyui_path)
+
+# Đảm bảo đường dẫn này cũng có trong sys.path để chắc chắn.
+if comfyui_path not in sys.path:
+    sys.path.insert(0, comfyui_path)
+# --- END OF FIX ---
+
+
+# Bây giờ, các import khác có thể tiếp tục một cách an toàn
 import torch
 import numpy as np
 from PIL import Image
 import gc
-import os
-import sys
 import datetime
 import random
 from IPython.display import display, Image as IPImage
 
-# Đảm bảo các module của ComfyUI có thể được import
-if '/content/ComfyUI' not in sys.path:
-    sys.path.insert(0, '/content/ComfyUI')
-
-# Import các node cần thiết từ ComfyUI
+# Import các node cần thiết từ ComfyUI (BÂY GIỜ SẼ HOẠT ĐỘNG)
 from nodes import (
     DualCLIPLoader, CLIPTextEncode, VAEEncode, VAEDecode, VAELoader, 
     KSamplerAdvanced, ConditioningZeroOut, LoraLoaderModelOnly, LoadImage, 
