@@ -1,3 +1,7 @@
+# @title 1.5. Ghi đè file core.py với phiên bản đã sửa lỗi
+# @markdown Chạy cell này để thay thế hoàn toàn file core.py gốc.
+
+%%writefile /content/imgcraft/imgcraft/core.py
 # /imgcraft/core.py
 import os
 import sys
@@ -7,9 +11,13 @@ import sys
 # Điều này cực kỳ quan trọng vì nhiều import nội bộ của ComfyUI
 # giả định rằng chương trình đang được chạy từ đây.
 comfyui_path = '/content/ComfyUI'
-os.chdir(comfyui_path)
+
+# os.chdir(comfyui_path) # <<< ĐÂY LÀ DÒNG GÂY LỖI.
+# Vô hiệu hóa để tránh làm thay đổi thư mục làm việc của toàn bộ chương trình,
+# gây ra lỗi ModuleNotFoundError.
 
 # Đảm bảo đường dẫn này cũng có trong sys.path để chắc chắn.
+# Đây là cách chính xác và an toàn để Python tìm thấy các module của ComfyUI.
 if comfyui_path not in sys.path:
     sys.path.insert(0, comfyui_path)
 # --- END OF FIX ---
@@ -26,8 +34,8 @@ from IPython.display import display, Image as IPImage
 
 # Import các node cần thiết từ ComfyUI (BÂY GIỜ SẼ HOẠT ĐỘNG)
 from nodes import (
-    DualCLIPLoader, CLIPTextEncode, VAEEncode, VAEDecode, VAELoader, 
-    KSamplerAdvanced, ConditioningZeroOut, LoraLoaderModelOnly, LoadImage, 
+    DualCLIPLoader, CLIPTextEncode, VAEEncode, VAEDecode, VAELoader,
+    KSamplerAdvanced, ConditioningZeroOut, LoraLoaderModelOnly, LoadImage,
     SaveImage
 )
 from custom_nodes.ComfyUI_GGUF.nodes import UnetLoaderGGUF
@@ -74,7 +82,7 @@ class Editor:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{prefix}_{timestamp}.png"
         output_path = os.path.join("/content/output", filename)
-        
+
         frame = (image_tensor.cpu().numpy().squeeze() * 255).astype(np.uint8)
         Image.fromarray(frame).save(output_path)
         return output_path
@@ -88,7 +96,7 @@ class Editor:
         new_height = int(original_height * ratio)
 
         processed_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-        
+
         # Lưu vào thư mục input của ComfyUI
         processed_filename = f"processed_{os.path.basename(image_path)}"
         processed_path = os.path.join('/content/ComfyUI/input', processed_filename)
@@ -99,7 +107,7 @@ class Editor:
     def process(self, image_path: str):
         """
         Thực thi quy trình chỉnh sửa ảnh với các tham số cố định.
-        
+
         Args:
             image_path (str): Đường dẫn đến ảnh cần xử lý.
         """
@@ -121,7 +129,7 @@ class Editor:
                     os.path.join(self.model_dir, "clip/clip_l.safetensors"),
                     "flux"
                 )[0]
-                
+
                 positive_prompt = "Manga cleaning, remove text, remove sfx"
                 prompt_encode = self.positive_prompt_encode.encode(clip, positive_prompt)[0]
                 negative = self.negative_prompt_encode.zero_out(prompt_encode)[0]
@@ -131,7 +139,7 @@ class Editor:
                 # 3. Tải VAE và encode ảnh thành latent
                 print("Loading VAE and encoding image...")
                 image_tensor = self.load_image.load_image(resized_path)[0]
-                
+
                 vae = self.vae_loader.load_vae(os.path.join(self.model_dir, "vae/ae.sft"))[0]
                 latent = self.vae_encode.encode(vae, image_tensor)[0]
 
@@ -143,14 +151,14 @@ class Editor:
                 model = self.unet_loader.load_unet(
                     os.path.join(self.model_dir, "unet/flux1-kontext-dev-Q6_K.gguf")
                 )[0]
-                
+
                 # Áp dụng Turbo LoRA
                 model = self.load_lora.load_lora_model_only(
                     model,
                     os.path.join(self.model_dir, "loras/flux_1_turbo_alpha.safetensors"),
                     1.0  # strength
                 )[0]
-                
+
                 # Áp dụng LoRA tùy chỉnh
                 model = self.load_lora.load_lora_model_only(
                     model,
@@ -160,7 +168,7 @@ class Editor:
 
                 # 5. Tạo latent rỗng cho output
                 output_latent = self.empty_latent_image.generate(width, height, 1)[0]
-                
+
                 # 6. Sampling
                 seed = random.randint(0, 2**32 - 1)
                 print(f"Editing image with seed: {seed}...")
@@ -196,3 +204,6 @@ class Editor:
                 print(f"An error occurred during processing: {e}")
             finally:
                 self._clear_memory()
+
+# Ghi file thành công
+print("✅ File /content/imgcraft/imgcraft/core.py đã được cập nhật với phiên bản đã sửa lỗi.")
