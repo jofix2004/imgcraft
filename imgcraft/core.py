@@ -20,7 +20,8 @@ from nodes import (
 from custom_nodes.ComfyUI_GGUF.nodes import UnetLoaderGGUF
 from comfy_extras.nodes_edit_model import ReferenceLatent
 from comfy_extras.nodes_flux import FluxGuidance
-from comfy_extras.nodes_sd3 import EmptySD3LatEImage
+# SỬA LỖI ĐÁNH MÁY: Sửa "LatEImage" thành "LatentImage"
+from comfy_extras.nodes_sd3 import EmptySD3LatentImage
 
 # --- PHẦN 2: KHỞI TẠO CÁC NODE (NHƯ BIẾN TOÀN CỤC) ---
 print("Initializing ComfyUI nodes for imgcraft...")
@@ -35,6 +36,7 @@ try:
     load_image_node = LoadImage()
     positive_prompt_encode_node = CLIPTextEncode()
     negative_prompt_encode_node = ConditioningZeroOut()
+    # SỬA LỖI ĐÁNH MÁY: Sửa "LatEImage" thành "LatentImage"
     empty_latent_image_node = EmptySD3LatentImage()
     flux_guidance_node = FluxGuidance()
     reference_latent_node = ReferenceLatent()
@@ -63,7 +65,6 @@ class Editor:
             self.clip = clip_loader_node.load_clip("t5xxl_fp8_e4m3fn.safetensors", "clip_l.safetensors", "flux")[0]
 
             print("Loading VAE...")
-            # SỬA LỖI: Thay đổi "ae.ft" thành "ae.sft"
             self.vae = vae_loader_node.load_vae("ae.sft")[0]
 
             print("Loading UNet and applying LoRAs...")
