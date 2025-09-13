@@ -37,17 +37,14 @@ def align_images(img_edited_pil, img_original_pil):
         detector = cv2.AKAZE_create()
         kpts1, descs1 = detector.detectAndCompute(gray_edited, None)
         kpts2, descs2 = detector.detectAndCompute(gray_original, None)
-        if descs1 is None or descs2 is None or len(descs1) < 4 or len(descs2) < 4:
-             raise ValueError("Not enough keypoints for coarse alignment.")
+        if descs1 is None or descs2 is None or len(descs1) < 4 or len(descs2) < 4: raise ValueError("Not enough keypoints.")
         matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
         matches = sorted(matcher.match(descs1, descs2), key=lambda x: x.distance)
-        if len(matches) < 4:
-            raise ValueError("Not enough matches for homography.")
+        if len(matches) < 4: raise ValueError("Not enough matches.")
         src_pts = np.float32([kpts1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
         dst_pts = np.float32([kpts2[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
         H_coarse, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-        if H_coarse is None:
-            raise ValueError("findHomography failed.")
+        if H_coarse is None: raise ValueError("findHomography failed.")
     except Exception as e:
         print(f"Coarse alignment failed: {e}. Returning unaligned image.")
         return img_edited_pil
@@ -56,22 +53,24 @@ def align_images(img_edited_pil, img_original_pil):
     return Image.fromarray(cv2.cvtColor(aligned_cv, cv2.COLOR_BGR2RGB))
 
 # ===================================================================
-# HÀM QUẢN LÝ THƯ VIỆN
+# HÀM QUẢN LÝ THƯ VIỆN (ĐÃ SỬA LỖI)
 # ===================================================================
 def get_gallery_pairs():
     pairs = {}
-    if not os.path.exists(GALLERY_PATH):
-        return []
+    if not os.path.exists(GALLERY_PATH): return []
     for filename in os.listdir(GALLERY_PATH):
-        if filename.endswith((".png", ".jpg")):
-            parts = filename.split('_')
-            if len(parts) >= 2:
-                timestamp = parts[0]
-                ftype_ext = '_'.join(parts[1:])
-                ftype = os.path.splitext(ftype_ext)[0]
-                if timestamp not in pairs:
-                    pairs[timestamp] = {}
-                pairs[timestamp][ftype] = os.path.join(GALLERY_PATH, filename)
+        try:
+            if filename.endswith("_original.png"):
+                timestamp = filename.replace("_original.png", "")
+                ftype = "original"
+            elif filename.endswith("_aligned.png"):
+                timestamp = filename.replace("_aligned.png", "")
+                ftype = "aligned"
+            else:
+                continue
+            if timestamp not in pairs: pairs[timestamp] = {}
+            pairs[timestamp][ftype] = os.path.join(GALLERY_PATH, filename)
+        except Exception: continue
     full_pairs = [
         (pairs[ts]['original'], pairs[ts]['aligned'])
         for ts in sorted(pairs.keys(), reverse=True)
@@ -82,14 +81,11 @@ def get_gallery_pairs():
 def delete_pair(original_path):
     try:
         aligned_path = original_path.replace("_original.png", "_aligned.png")
-        if os.path.exists(original_path):
-            os.remove(original_path)
-        if os.path.exists(aligned_path):
-            os.remove(aligned_path)
-        gr.Info(f"Đã xóa cặp ảnh!")
+        if os.path.exists(original_path): os.remove(original_path)
+        if os.path.exists(aligned_path): os.remove(aligned_path)
+        gr.Info("Đã xóa cặp ảnh!")
     except Exception as e:
         gr.Warning(f"Lỗi khi xóa ảnh: {e}")
-    # Trả về một gr.update() để kích hoạt hàm refresh_gallery một cách gián tiếp
     return gr.update()
 
 # ===================================================================
@@ -120,37 +116,22 @@ def process_and_align_and_save(image_np, target_width, target_height, progress=g
 # HÀM XÂY DỰNG GIAO DIỆN THƯ VIỆN ĐỘNG
 # ===================================================================
 def refresh_gallery():
-    """Tạo lại giao diện thư viện từ dữ liệu mới nhất trên Drive."""
     pairs = get_gallery_pairs()
-    
-    # SỬA LỖI GRADIO: Dùng khối 'with' thay vì tham số 'value'
     with gr.Blocks() as gallery_block:
         if not pairs:
             gr.Markdown("*Thư viện đang trống. Hãy xử lý một ảnh để bắt đầu!*")
         else:
             for i, (orig_path, aligned_path) in enumerate(pairs):
                 with gr.Row(variant="panel"):
-                    gr.Image(orig_path, label="Gốc (đã resize)", height=256, elem_id=f"orig_{i}")
-                    gr.Image(aligned_path, label="Đã khớp", height=256, elem_id=f"aligned_{i}")
+                    gr.Image(orig_path, label="Gốc (đã resize)", height=256)
+                    gr.Image(aligned_path, label="Đã khớp", height=256)
                     with gr.Column(min_width=100):
                         filename = os.path.basename(orig_path).replace("_original.png", "")
                         gr.Markdown(f"**ID:**\n`{filename}`")
-                        delete_button = gr.Button("🗑️ Xóa", variant="stop", elem_id=f"delete_{i}")
-                
-                # Hàm phụ để xử lý sự kiện click, tránh lỗi closure
+                        delete_button = gr.Button("🗑️ Xóa", variant="stop")
                 def create_delete_fn(path):
                     return lambda: delete_pair(path)
-
-                delete_button.click(
-                    fn=create_delete_fn(orig_path),
-                    inputs=None,
-                    outputs=None # Nút xóa sẽ không trực tiếp cập nhật, nó chỉ kích hoạt sự kiện refresh
-                ).then(
-                    fn=refresh_gallery,
-                    inputs=None,
-                    outputs=gallery_container # Sau khi xóa, làm mới toàn bộ thư viện
-                )
-                
+                delete_button.click(fn=create_delete_fn(orig_path), inputs=None, outputs=None).then(fn=refresh_gallery, inputs=None, outputs=gallery_container)
     return gallery_block
 
 # ===================================================================
@@ -181,28 +162,10 @@ with gr.Blocks(theme=gr.themes.Soft(), css=".gradio-container {max-width: 90% !i
         with gr.TabItem("🖼️ Thư viện Ảnh (Gallery)"):
             gr.Markdown("Xem lại các cặp ảnh đã xử lý được lưu trên Google Drive của bạn.")
             refresh_button = gr.Button("🔄 Tải lại Thư viện")
-            gallery_container = gr.Column() # Vùng chứa động cho thư viện
-    
-    # === ĐỊNH NGHĨA CÁC SỰ KIỆN ===
-    run_button.click(
-        fn=process_and_align_and_save,
-        inputs=[input_image, target_width, target_height],
-        outputs=[output_original_resized, output_processed, output_aligned, output_aligned_2]
-    ).then(
-        fn=refresh_gallery,
-        inputs=None,
-        outputs=gallery_container
-    )
-    refresh_button.click(
-        fn=refresh_gallery,
-        inputs=None,
-        outputs=gallery_container
-    )
-    demo.load(
-        fn=refresh_gallery,
-        inputs=None,
-        outputs=gallery_container
-    )
+            gallery_container = gr.Column()
+    run_button.click(fn=process_and_align_and_save, inputs=[input_image, target_width, target_height], outputs=[output_original_resized, output_processed, output_aligned, output_aligned_2]).then(fn=refresh_gallery, inputs=None, outputs=gallery_container)
+    refresh_button.click(fn=refresh_gallery, inputs=None, outputs=gallery_container)
+    demo.load(fn=refresh_gallery, inputs=None, outputs=gallery_container)
 
 if __name__ == "__main__":
     demo.launch(debug=True, share=True)
