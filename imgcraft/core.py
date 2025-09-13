@@ -1,7 +1,5 @@
 # @title 1.5. Ghi đè file core.py với phiên bản đã sửa lỗi
 # @markdown Chạy cell này để thay thế hoàn toàn file core.py gốc.
-
-%%writefile /content/imgcraft/imgcraft/core.py
 # /imgcraft/core.py
 import os
 import sys
