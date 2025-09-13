@@ -20,7 +20,7 @@ from nodes import (
 from custom_nodes.ComfyUI_GGUF.nodes import UnetLoaderGGUF
 from comfy_extras.nodes_edit_model import ReferenceLatent
 from comfy_extras.nodes_flux import FluxGuidance
-from comfy_extras.nodes_sd3 import EmptySD3LatentImage
+from comfy_extras.nodes_sd3 import EmptySD3LatEImage
 
 # --- PHẦN 2: KHỞI TẠO CÁC NODE (NHƯ BIẾN TOÀN CỤC) ---
 print("Initializing ComfyUI nodes for imgcraft...")
@@ -63,7 +63,8 @@ class Editor:
             self.clip = clip_loader_node.load_clip("t5xxl_fp8_e4m3fn.safetensors", "clip_l.safetensors", "flux")[0]
 
             print("Loading VAE...")
-            self.vae = vae_loader_node.load_vae("ae.ft")[0]
+            # SỬA LỖI: Thay đổi "ae.ft" thành "ae.sft"
+            self.vae = vae_loader_node.load_vae("ae.sft")[0]
 
             print("Loading UNet and applying LoRAs...")
             model_temp = unet_loader_node.load_unet("flux1-kontext-dev-Q6_K.gguf")[0]
@@ -106,7 +107,7 @@ class Editor:
                 output_latent = empty_latent_image_node.generate(width, height, 1)[0]
                 seed = random.randint(0, 2**32 - 1)
                 
-                print(f"Starting rendering with seed: {seed}...")
+                print(f"Starting rendering with seed: {seed}")
                 image_out_latent = ksampler_node.sample(
                     model=self.model, add_noise="enable", noise_seed=seed, steps=8, cfg=1.0,
                     sampler_name="euler", scheduler="simple", positive=positive, negative=negative,
@@ -116,7 +117,6 @@ class Editor:
                 print("Decoding latents...")
                 decoded_tensor = vae_decode_node.decode(self.vae, image_out_latent)[0]
                 
-                # Trả về đối tượng PIL Image
                 return self._tensor_to_pil(decoded_tensor)
             
             except Exception as e:
