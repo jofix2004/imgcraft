@@ -1,0 +1,9 @@
+--quiet
+torchsde
+av
+diffusers
+xformers==0.0.29.post2
+accelerate
+einops
+spandrel
+opencv-python
