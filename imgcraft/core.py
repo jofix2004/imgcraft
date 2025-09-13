@@ -9,7 +9,7 @@ import datetime
 import random
 from IPython.display import display, Image as IPImage
 
-# --- PHẦN 1: THIẾT LẬP MÔI TRƯỜNG VÀ IMPORT ---
+# --- PHẦN 1: THIẾT LẬP MÔI TRƯỜỜNG VÀ IMPORT ---
 comfyui_path = '/content/ComfyUI'
 if comfyui_path not in sys.path:
     sys.path.insert(0, comfyui_path)
@@ -53,9 +53,14 @@ class Editor:
         self.model = None
         self._load_models() # Tải trước các mô hình khi khởi tạo
 
-    def _clear_memory(self, empty_cache=True):
+    def _clear_memory(self):
+        """
+        SỬA LỖI BỘ NHỚ: Hàm dọn dẹp tích cực hơn.
+        Nó sẽ giải phóng bộ nhớ đệm của Pytorch. Điều này an toàn vì các mô hình chính
+        (self.clip, self.vae, self.model) vẫn đang được tham chiếu và sẽ không bị xóa.
+        """
         gc.collect()
-        if empty_cache and torch.cuda.is_available():
+        if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.ipc_collect()
 
@@ -83,20 +88,13 @@ class Editor:
             raise e
 
     def _resize_image(self, image_path, target_width, target_height):
-        """
-        Thay đổi kích thước ảnh để vừa vặn bên trong khung mục tiêu
-        mà không làm biến dạng tỷ lệ gốc.
-        """
         img = Image.open(image_path).convert("RGB")
         original_width, original_height = img.size
-        
         width_ratio = target_width / original_width
         height_ratio = target_height / original_height
         ratio = min(width_ratio, height_ratio)
-
         new_width = int(original_width * ratio)
         new_height = int(original_height * ratio)
-
         processed_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
         processed_filename = f"processed_{os.path.basename(image_path)}"
         processed_path = os.path.join('/content/ComfyUI/input', processed_filename)
@@ -126,7 +124,6 @@ class Editor:
                 resized_path, width, height = self._resize_image(image_path, target_width, target_height)
                 print(f"Image processed to target resolution: {width}x{height}")
 
-                # Tái sử dụng các mô hình đã tải trước
                 positive_prompt = "Manga cleaning, remove text, remove sfx"
                 prompt_encode = positive_prompt_encode_node.encode(self.clip, positive_prompt)[0]
                 negative = negative_prompt_encode_node.zero_out(prompt_encode)[0]
@@ -157,4 +154,6 @@ class Editor:
             except Exception as e:
                 print(f"An error occurred during processing: {e}")
             finally:
-                self._clear_memory(empty_cache=False)
+                # SỬA LỖI BỘ NHỚ: Luôn gọi hàm dọn dẹp tích cực sau mỗi lần chạy.
+                print("Cleaning up temporary memory...")
+                self._clear_memory()
