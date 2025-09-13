@@ -17,7 +17,7 @@ os.makedirs(GALLERY_PATH, exist_ok=True)
 
 
 # ===================================================================
-# CÁC HÀM XỬ LÝ ẢNH (Không thay đổi)
+# CÁC HÀM XỬ LÝ ẢNH
 # ===================================================================
 def resize_image(image_pil, target_width, target_height):
     original_width, original_height = image_pil.size
@@ -53,40 +53,44 @@ def align_images(img_edited_pil, img_original_pil):
     return Image.fromarray(cv2.cvtColor(aligned_cv, cv2.COLOR_BGR2RGB))
 
 # ===================================================================
-# HÀM QUẢN LÝ THƯ VIỆN (ĐÃ SỬA LỖI)
+# HÀM QUẢN LÝ THƯ VIỆN
 # ===================================================================
-def get_gallery_pairs():
-    pairs = {}
+def get_gallery_data():
+    pairs_dict = {}
     if not os.path.exists(GALLERY_PATH): return []
     for filename in os.listdir(GALLERY_PATH):
         try:
             if filename.endswith("_original.png"):
                 timestamp = filename.replace("_original.png", "")
-                ftype = "original"
+                if timestamp not in pairs_dict: pairs_dict[timestamp] = {}
+                pairs_dict[timestamp]['original'] = os.path.join(GALLERY_PATH, filename)
             elif filename.endswith("_aligned.png"):
                 timestamp = filename.replace("_aligned.png", "")
-                ftype = "aligned"
-            else:
-                continue
-            if timestamp not in pairs: pairs[timestamp] = {}
-            pairs[timestamp][ftype] = os.path.join(GALLERY_PATH, filename)
+                if timestamp not in pairs_dict: pairs_dict[timestamp] = {}
+                pairs_dict[timestamp]['aligned'] = os.path.join(GALLERY_PATH, filename)
         except Exception: continue
-    full_pairs = [
-        (pairs[ts]['original'], pairs[ts]['aligned'])
-        for ts in sorted(pairs.keys(), reverse=True)
-        if 'original' in pairs[ts] and 'aligned' in pairs[ts]
+    gallery_previews = [
+        (pairs_dict[ts]['original'], f"ID: {ts}")
+        for ts in sorted(pairs_dict.keys(), reverse=True)
+        if 'original' in pairs_dict[ts] and 'aligned' in pairs_dict[ts]
     ]
-    return full_pairs
+    return gallery_previews
 
-def delete_pair(original_path):
+def refresh_gallery():
+    return gr.update(value=get_gallery_data())
+
+def delete_pair_by_id(timestamp_to_delete):
+    if not timestamp_to_delete:
+        gr.Warning("Không có ID nào được chọn để xóa.")
+        return
     try:
-        aligned_path = original_path.replace("_original.png", "_aligned.png")
+        original_path = os.path.join(GALLERY_PATH, f"{timestamp_to_delete}_original.png")
+        aligned_path = os.path.join(GALLERY_PATH, f"{timestamp_to_delete}_aligned.png")
         if os.path.exists(original_path): os.remove(original_path)
         if os.path.exists(aligned_path): os.remove(aligned_path)
-        gr.Info("Đã xóa cặp ảnh!")
+        gr.Info(f"Đã xóa cặp ảnh ID: {timestamp_to_delete}")
     except Exception as e:
         gr.Warning(f"Lỗi khi xóa ảnh: {e}")
-    return gr.update()
 
 # ===================================================================
 # HÀM CHÍNH CHO GRADIO
@@ -113,28 +117,6 @@ def process_and_align_and_save(image_np, target_width, target_height, progress=g
     return resized_original_pil, processed_pil, aligned_pil, aligned_pil
 
 # ===================================================================
-# HÀM XÂY DỰNG GIAO DIỆN THƯ VIỆN ĐỘNG
-# ===================================================================
-def refresh_gallery():
-    pairs = get_gallery_pairs()
-    with gr.Blocks() as gallery_block:
-        if not pairs:
-            gr.Markdown("*Thư viện đang trống. Hãy xử lý một ảnh để bắt đầu!*")
-        else:
-            for i, (orig_path, aligned_path) in enumerate(pairs):
-                with gr.Row(variant="panel"):
-                    gr.Image(orig_path, label="Gốc (đã resize)", height=256)
-                    gr.Image(aligned_path, label="Đã khớp", height=256)
-                    with gr.Column(min_width=100):
-                        filename = os.path.basename(orig_path).replace("_original.png", "")
-                        gr.Markdown(f"**ID:**\n`{filename}`")
-                        delete_button = gr.Button("🗑️ Xóa", variant="stop")
-                def create_delete_fn(path):
-                    return lambda: delete_pair(path)
-                delete_button.click(fn=create_delete_fn(orig_path), inputs=None, outputs=None).then(fn=refresh_gallery, inputs=None, outputs=gallery_container)
-    return gallery_block
-
-# ===================================================================
 # XÂY DỰNG GIAO DIỆN GRADIO CHÍNH
 # ===================================================================
 with gr.Blocks(theme=gr.themes.Soft(), css=".gradio-container {max-width: 90% !important;}") as demo:
@@ -159,13 +141,78 @@ with gr.Blocks(theme=gr.themes.Soft(), css=".gradio-container {max-width: 90% !i
                             with gr.Row():
                                 output_processed = gr.Image(label="Ảnh sau khi qua ComfyUI (chưa khớp)", interactive=False)
                                 output_aligned_2 = gr.Image(label="Ảnh Cuối cùng (đã khớp)", interactive=False)
+
         with gr.TabItem("🖼️ Thư viện Ảnh (Gallery)"):
-            gr.Markdown("Xem lại các cặp ảnh đã xử lý được lưu trên Google Drive của bạn.")
-            refresh_button = gr.Button("🔄 Tải lại Thư viện")
-            gallery_container = gr.Column()
-    run_button.click(fn=process_and_align_and_save, inputs=[input_image, target_width, target_height], outputs=[output_original_resized, output_processed, output_aligned, output_aligned_2]).then(fn=refresh_gallery, inputs=None, outputs=gallery_container)
-    refresh_button.click(fn=refresh_gallery, inputs=None, outputs=gallery_container)
-    demo.load(fn=refresh_gallery, inputs=None, outputs=gallery_container)
+            gr.Markdown("Nhấn vào một ảnh trong thư viện bên trái để xem chi tiết và quản lý ở bên phải.")
+            with gr.Row():
+                # CỘT THƯ VIỆN (1/3)
+                with gr.Column(scale=1):
+                    refresh_button = gr.Button("🔄 Tải lại Thư viện")
+                    # Lưới 3 cột
+                    gallery_view = gr.Gallery(label="Ảnh gốc đã xử lý", columns=3, height="auto")
+                
+                # CỘT CHI TIẾT (2/3) - LUÔN HIỂN THỊ
+                with gr.Column(scale=2):
+                    gr.Markdown("### Chi tiết Cặp ảnh")
+                    # Vùng hiển thị khi chưa chọn gì
+                    with gr.Column(visible=True) as placeholder_view:
+                        gr.Markdown("*<center>⬅️ Vui lòng chọn một ảnh từ thư viện bên trái để xem chi tiết.</center>*")
+                    
+                    # Vùng hiển thị khi đã chọn ảnh
+                    with gr.Column(visible=False) as detail_view:
+                        selected_id = gr.Textbox(label="ID đang xem", interactive=False)
+                        with gr.Row():
+                            detail_original = gr.Image(label="Ảnh Gốc (đã resize)")
+                            detail_aligned = gr.Image(label="Ảnh Đã Khớp")
+                        delete_button = gr.Button("🗑️ Xóa cặp ảnh này", variant="stop")
+
+    # === ĐỊNH NGHĨA CÁC SỰ KIỆN ===
+    
+    # HÀM PHỤ ĐỂ LẤY CHI TIẾT KHI CHỌN ẢNH TRONG GALLERY
+    def get_details(evt: gr.SelectData):
+        caption = evt.value['caption']
+        timestamp = caption.replace("ID: ", "")
+        original_path = os.path.join(GALLERY_PATH, f"{timestamp}_original.png")
+        aligned_path = os.path.join(GALLERY_PATH, f"{timestamp}_aligned.png")
+        return {
+            placeholder_view: gr.update(visible=False), # Ẩn placeholder
+            detail_view: gr.update(visible=True),      # Hiện vùng chi tiết
+            selected_id: timestamp,
+            detail_original: original_path,
+            detail_aligned: aligned_path
+        }
+    
+    # HÀM PHỤ ĐỂ XÓA VÀ CẬP NHẬT GIAO DIỆN
+    def delete_and_refresh(timestamp_to_delete):
+        delete_pair_by_id(timestamp_to_delete)
+        return {
+            gallery_view: refresh_gallery(),
+            placeholder_view: gr.update(visible=True),  # Hiện lại placeholder
+            detail_view: gr.update(visible=False)       # Ẩn vùng chi tiết
+        }
+
+    # SỰ KIỆN CHÍNH
+    run_button.click(
+        fn=process_and_align_and_save,
+        inputs=[input_image, target_width, target_height],
+        outputs=[output_original_resized, output_processed, output_aligned, output_aligned_2]
+    ).then(fn=refresh_gallery, inputs=None, outputs=gallery_view)
+    
+    gallery_view.select(
+        fn=get_details,
+        inputs=None,
+        outputs=[placeholder_view, detail_view, selected_id, detail_original, detail_aligned]
+    )
+
+    delete_button.click(
+        fn=delete_and_refresh,
+        inputs=[selected_id],
+        outputs=[gallery_view, placeholder_view, detail_view]
+    )
+    
+    refresh_button.click(fn=refresh_gallery, inputs=None, outputs=gallery_view)
+    
+    demo.load(fn=refresh_gallery, inputs=None, outputs=gallery_view)
 
 if __name__ == "__main__":
     demo.launch(debug=True, share=True)
