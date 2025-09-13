@@ -6,15 +6,13 @@ import math
 from imgcraft import Editor
 
 # ===================================================================
-# KHỞI TẠO CÁC THÀNH PHẦN CHÍNH (Tải mô hình một lần)
+# KHỞI TẠO EDITOR (Phiên bản ổn định, không tải trước)
 # ===================================================================
 print("Initializing Gradio App...")
-try:
-    comfyui_editor = Editor()
-    print("ComfyUI Editor is ready.")
-except Exception as e:
-    print(f"Fatal error during Editor initialization: {e}")
-    comfyui_editor = None
+# Tạo một instance Editor "rỗng". Các mô hình sẽ được tải trong hàm process.
+comfyui_editor = Editor()
+print("ComfyUI Editor is ready.")
+
 
 # ===================================================================
 # CÁC HÀM XỬ LÝ ẢNH
@@ -38,7 +36,6 @@ def align_images(img_edited_pil, img_original_pil):
         detector = cv2.AKAZE_create()
         kpts1, descs1 = detector.detectAndCompute(gray_edited, None)
         kpts2, descs2 = detector.detectAndCompute(gray_original, None)
-        
         if descs1 is None or descs2 is None or len(descs1) < 4 or len(descs2) < 4:
              raise ValueError("Not enough keypoints for coarse alignment.")
         matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
@@ -59,44 +56,26 @@ def align_images(img_edited_pil, img_original_pil):
     return Image.fromarray(cv2.cvtColor(aligned_cv, cv2.COLOR_BGR2RGB))
 
 # ===================================================================
-# HÀM CHÍNH CHO GRADIO (SỬ DỤNG YIELD)
+# HÀM CHÍNH CHO GRADIO (Phiên bản ổn định, không dùng yield)
 # ===================================================================
 def process_and_align(image_np, target_width, target_height, progress=gr.Progress()):
-    if comfyui_editor is None:
-        raise gr.Error("Editor không được khởi tạo. Vui lòng kiểm tra log Colab.")
-    
     # 1. Tải và Resize ảnh gốc
     progress(0, desc="Bước 1/3: Đang thay đổi kích thước ảnh gốc...")
     original_pil = Image.fromarray(image_np)
     resized_original_pil = resize_image(original_pil, target_width, target_height)
 
     # 2. Xử lý qua ComfyUI
-    progress(0.3, desc="Bước 2/3: Đang xử lý ảnh qua ComfyUI (có thể mất vài phút)...")
+    progress(0.2, desc="Bước 2/3: Đang xử lý ảnh qua ComfyUI (tải mô hình + render)...")
     processed_pil = comfyui_editor.process(resized_original_pil)
-    
-    # CẬP NHẬT GIAO DIỆN LẦN ĐẦU TIÊN
-    # Cập nhật các ô ảnh với kết quả trung gian
-    yield {
-        output_processed: processed_pil,
-        output_aligned_for_compare: resized_original_pil, # Hiển thị ảnh gốc đã resize để so sánh
-        output_aligned: gr.Image(visible=False), # Tạm ẩn đi
-        output_aligned_2: gr.Image(visible=False) # Tạm ẩn đi
-    }
 
     # 3. Khớp ảnh đã xử lý với ảnh gốc đã resize
-    progress(0.8, desc="Bước 3/3: Đang khớp ảnh kết quả...")
+    progress(0.9, desc="Bước 3/3: Đang khớp ảnh kết quả...")
     aligned_pil = align_images(processed_pil, resized_original_pil)
 
     progress(1.0, desc="Hoàn thành!")
     
-    # CẬP NHẬT GIAO DIỆN LẦN CUỐI CÙNG
-    # Cập nhật tất cả các ô ảnh với kết quả cuối cùng
-    yield {
-        output_processed: processed_pil,
-        output_aligned_for_compare: resized_original_pil,
-        output_aligned: aligned_pil,
-        output_aligned_2: aligned_pil
-    }
+    # TRẢ VỀ TẤT CẢ CÁC ẢNH CÙNG MỘT LÚC
+    return resized_original_pil, processed_pil, aligned_pil, aligned_pil
 
 # ===================================================================
 # XÂY DỰNG GIAO DIỆN GRADIO
@@ -118,17 +97,18 @@ with gr.Blocks(theme=gr.themes.Soft(), css=".gradio-container {max-width: 90% !i
                 with gr.TabItem("So sánh Trước & Sau"):
                     gr.Markdown("So sánh ảnh **đã khớp** với ảnh **gốc đã resize**.")
                     with gr.Row():
-                        output_aligned_for_compare = gr.Image(label="Ảnh Gốc (đã resize)", interactive=False)
+                        output_original_resized = gr.Image(label="Ảnh Gốc (đã resize)", interactive=False)
                         output_aligned = gr.Image(label="Ảnh Cuối cùng (đã khớp)", interactive=False)
                 with gr.TabItem("Các bước Trung gian"):
                     with gr.Row():
                         output_processed = gr.Image(label="Ảnh sau khi qua ComfyUI (chưa khớp)", interactive=False)
                         output_aligned_2 = gr.Image(label="Ảnh Cuối cùng (đã khớp)", interactive=False)
 
+    # Cập nhật lại danh sách outputs để khớp với hàm return mới
     run_button.click(
         fn=process_and_align,
         inputs=[input_image, target_width, target_height],
-        outputs=[output_processed, output_aligned_for_compare, output_aligned, output_aligned_2]
+        outputs=[output_original_resized, output_processed, output_aligned, output_aligned_2]
     )
 
 if __name__ == "__main__":
