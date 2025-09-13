@@ -9,14 +9,10 @@ from imgcraft import Editor
 # ===================================================================
 # CẤU HÌNH VÀ KHỞI TẠO
 # ===================================================================
-# Đường dẫn đến thư mục lưu trữ trên Google Drive
 GALLERY_PATH = "/content/drive/MyDrive/ImgCraft_Gallery"
-
 print("Initializing Gradio App...")
-# Tạo một instance Editor "rỗng". Các mô hình sẽ được tải trong hàm process.
 comfyui_editor = Editor()
 print("ComfyUI Editor is ready.")
-# Đảm bảo thư mục gallery tồn tại
 os.makedirs(GALLERY_PATH, exist_ok=True)
 
 
@@ -37,7 +33,6 @@ def align_images(img_edited_pil, img_original_pil):
     img_original = cv2.cvtColor(np.array(img_original_pil), cv2.COLOR_RGB2BGR)
     gray_edited = cv2.cvtColor(img_edited, cv2.COLOR_BGR2GRAY)
     gray_original = cv2.cvtColor(img_original, cv2.COLOR_BGR2GRAY)
-    
     try:
         detector = cv2.AKAZE_create()
         kpts1, descs1 = detector.detectAndCompute(gray_edited, None)
@@ -56,7 +51,6 @@ def align_images(img_edited_pil, img_original_pil):
     except Exception as e:
         print(f"Coarse alignment failed: {e}. Returning unaligned image.")
         return img_edited_pil
-
     h_orig, w_orig = img_original.shape[:2]
     aligned_cv = cv2.warpPerspective(img_edited, H_coarse, (w_orig, h_orig))
     return Image.fromarray(cv2.cvtColor(aligned_cv, cv2.COLOR_BGR2RGB))
@@ -65,21 +59,19 @@ def align_images(img_edited_pil, img_original_pil):
 # HÀM QUẢN LÝ THƯ VIỆN
 # ===================================================================
 def get_gallery_pairs():
-    """Quét thư mục Drive và trả về danh sách các cặp ảnh."""
     pairs = {}
     if not os.path.exists(GALLERY_PATH):
         return []
-    
     for filename in os.listdir(GALLERY_PATH):
         if filename.endswith((".png", ".jpg")):
             parts = filename.split('_')
-            if len(parts) == 2:
-                timestamp, ftype = parts[0], parts[1].split('.')[0]
+            if len(parts) >= 2:
+                timestamp = parts[0]
+                ftype_ext = '_'.join(parts[1:])
+                ftype = os.path.splitext(ftype_ext)[0]
                 if timestamp not in pairs:
                     pairs[timestamp] = {}
                 pairs[timestamp][ftype] = os.path.join(GALLERY_PATH, filename)
-
-    # Lọc ra những cặp đầy đủ và sắp xếp theo thứ tự mới nhất
     full_pairs = [
         (pairs[ts]['original'], pairs[ts]['aligned'])
         for ts in sorted(pairs.keys(), reverse=True)
@@ -88,7 +80,6 @@ def get_gallery_pairs():
     return full_pairs
 
 def delete_pair(original_path):
-    """Xóa một cặp ảnh dựa trên đường dẫn của ảnh gốc."""
     try:
         aligned_path = original_path.replace("_original.png", "_aligned.png")
         if os.path.exists(original_path):
@@ -98,38 +89,30 @@ def delete_pair(original_path):
         gr.Info(f"Đã xóa cặp ảnh!")
     except Exception as e:
         gr.Warning(f"Lỗi khi xóa ảnh: {e}")
-    return refresh_gallery() # Tải lại thư viện sau khi xóa
+    # Trả về một gr.update() để kích hoạt hàm refresh_gallery một cách gián tiếp
+    return gr.update()
 
 # ===================================================================
 # HÀM CHÍNH CHO GRADIO
 # ===================================================================
 def process_and_align_and_save(image_np, target_width, target_height, progress=gr.Progress()):
-    # 1. Resize ảnh gốc
     progress(0, desc="Bước 1/4: Đang thay đổi kích thước ảnh gốc...")
     original_pil = Image.fromarray(image_np)
     resized_original_pil = resize_image(original_pil, target_width, target_height)
-
-    # 2. Xử lý qua ComfyUI
     progress(0.2, desc="Bước 2/4: Đang xử lý ảnh qua ComfyUI...")
     processed_pil = comfyui_editor.process(resized_original_pil)
-
-    # 3. Khớp ảnh
     progress(0.8, desc="Bước 3/4: Đang khớp ảnh kết quả...")
     aligned_pil = align_images(processed_pil, resized_original_pil)
-
-    # 4. Lưu vào Google Drive
     progress(0.9, desc="Bước 4/4: Đang lưu vào Google Drive...")
     try:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         original_save_path = os.path.join(GALLERY_PATH, f"{timestamp}_original.png")
         aligned_save_path = os.path.join(GALLERY_PATH, f"{timestamp}_aligned.png")
-        
         resized_original_pil.save(original_save_path)
         aligned_pil.save(aligned_save_path)
         gr.Info("Cặp ảnh đã được lưu thành công vào Google Drive!")
     except Exception as e:
         gr.Warning(f"Lỗi khi lưu vào Google Drive: {e}")
-
     progress(1.0, desc="Hoàn thành!")
     return resized_original_pil, processed_pil, aligned_pil, aligned_pil
 
@@ -139,41 +122,42 @@ def process_and_align_and_save(image_np, target_width, target_height, progress=g
 def refresh_gallery():
     """Tạo lại giao diện thư viện từ dữ liệu mới nhất trên Drive."""
     pairs = get_gallery_pairs()
-    # Trả về một component gr.Column chứa các cặp ảnh
-    # hoặc một thông báo nếu thư viện trống
-    if not pairs:
-        return gr.Column(visible=True, value=[gr.Markdown("*Thư viện đang trống. Hãy xử lý một ảnh để bắt đầu!*")])
+    
+    # SỬA LỖI GRADIO: Dùng khối 'with' thay vì tham số 'value'
+    with gr.Blocks() as gallery_block:
+        if not pairs:
+            gr.Markdown("*Thư viện đang trống. Hãy xử lý một ảnh để bắt đầu!*")
+        else:
+            for i, (orig_path, aligned_path) in enumerate(pairs):
+                with gr.Row(variant="panel"):
+                    gr.Image(orig_path, label="Gốc (đã resize)", height=256, elem_id=f"orig_{i}")
+                    gr.Image(aligned_path, label="Đã khớp", height=256, elem_id=f"aligned_{i}")
+                    with gr.Column(min_width=100):
+                        filename = os.path.basename(orig_path).replace("_original.png", "")
+                        gr.Markdown(f"**ID:**\n`{filename}`")
+                        delete_button = gr.Button("🗑️ Xóa", variant="stop", elem_id=f"delete_{i}")
+                
+                # Hàm phụ để xử lý sự kiện click, tránh lỗi closure
+                def create_delete_fn(path):
+                    return lambda: delete_pair(path)
 
-    # Tạo một danh sách các component để hiển thị
-    gallery_items = []
-    for orig_path, aligned_path in pairs:
-        with gr.Blocks() as item_block: # Dùng Blocks để nhóm các component
-            with gr.Row(variant="panel"):
-                gr.Image(orig_path, label="Gốc (đã resize)", height=256)
-                gr.Image(aligned_path, label="Đã khớp", height=256)
-                with gr.Column(min_width=100):
-                    filename = os.path.basename(orig_path).replace("_original.png", "")
-                    gr.Markdown(f"**ID:**\n`{filename}`")
-                    delete_button = gr.Button("🗑️ Xóa", variant="stop")
-        
-        # Liên kết sự kiện click của nút xóa với hàm delete_pair
-        # Dùng lambda để truyền đường dẫn vào hàm
-        delete_button.click(
-            fn=lambda p=orig_path: delete_pair(p),
-            inputs=None,
-            outputs=gallery_container # Nút xóa sẽ kích hoạt việc làm mới toàn bộ thư viện
-        )
-        gallery_items.append(item_block)
-        
-    return gr.Column(visible=True, value=gallery_items)
-
+                delete_button.click(
+                    fn=create_delete_fn(orig_path),
+                    inputs=None,
+                    outputs=None # Nút xóa sẽ không trực tiếp cập nhật, nó chỉ kích hoạt sự kiện refresh
+                ).then(
+                    fn=refresh_gallery,
+                    inputs=None,
+                    outputs=gallery_container # Sau khi xóa, làm mới toàn bộ thư viện
+                )
+                
+    return gallery_block
 
 # ===================================================================
 # XÂY DỰNG GIAO DIỆN GRADIO CHÍNH
 # ===================================================================
 with gr.Blocks(theme=gr.themes.Soft(), css=".gradio-container {max-width: 90% !important;}") as demo:
     gr.Markdown("# 🎨 Quy trình Xử lý & Khớp ảnh Tự động (với Google Drive)")
-    
     with gr.Tabs():
         with gr.TabItem("⚙️ Xử lý Ảnh"):
             with gr.Row():
@@ -194,33 +178,26 @@ with gr.Blocks(theme=gr.themes.Soft(), css=".gradio-container {max-width: 90% !i
                             with gr.Row():
                                 output_processed = gr.Image(label="Ảnh sau khi qua ComfyUI (chưa khớp)", interactive=False)
                                 output_aligned_2 = gr.Image(label="Ảnh Cuối cùng (đã khớp)", interactive=False)
-        
         with gr.TabItem("🖼️ Thư viện Ảnh (Gallery)"):
             gr.Markdown("Xem lại các cặp ảnh đã xử lý được lưu trên Google Drive của bạn.")
             refresh_button = gr.Button("🔄 Tải lại Thư viện")
             gallery_container = gr.Column() # Vùng chứa động cho thư viện
     
     # === ĐỊNH NGHĨA CÁC SỰ KIỆN ===
-    
-    # 1. Khi nhấn nút xử lý
     run_button.click(
         fn=process_and_align_and_save,
         inputs=[input_image, target_width, target_height],
         outputs=[output_original_resized, output_processed, output_aligned, output_aligned_2]
-    ).then( # Sau khi xử lý xong, tự động làm mới thư viện
+    ).then(
         fn=refresh_gallery,
         inputs=None,
         outputs=gallery_container
     )
-    
-    # 2. Khi nhấn nút tải lại thư viện
     refresh_button.click(
         fn=refresh_gallery,
         inputs=None,
         outputs=gallery_container
     )
-    
-    # 3. Khi ứng dụng tải lần đầu tiên, tự động tải thư viện
     demo.load(
         fn=refresh_gallery,
         inputs=None,
