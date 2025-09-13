@@ -66,5 +66,3 @@ Khi tất cả các thư viện đã được cài đặt, khởi động ứng 
 ```bash
 python app.py
 ```
--   **Tăng tốc hiệu năng:** Numba
--   **OCR:** python-doctr, manga-ocr````
