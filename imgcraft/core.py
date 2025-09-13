@@ -9,13 +9,11 @@ import datetime
 import random
 from IPython.display import display, Image as IPImage
 
-# --- PHẦN 1: THIẾT LẬP MÔI TRƯỜNG VÀ IMPORT ---
-# Luôn đảm bảo ComfyUI có trong sys.path để các lệnh import hoạt động ổn định.
+# --- PHẦN 1: THIẾT LẬP MÔI TRƯỜỜNG VÀ IMPORT ---
 comfyui_path = '/content/ComfyUI'
 if comfyui_path not in sys.path:
     sys.path.insert(0, comfyui_path)
 
-# Import tất cả các node cần thiết.
 from nodes import (
     DualCLIPLoader, CLIPTextEncode, VAEEncode, VAEDecode, VAELoader,
     KSamplerAdvanced, ConditioningZeroOut, LoraLoaderModelOnly, LoadImage,
@@ -27,8 +25,6 @@ from comfy_extras.nodes_flux import FluxGuidance
 from comfy_extras.nodes_sd3 import EmptySD3LatentImage
 
 # --- PHẦN 2: KHỞI TẠO CÁC NODE (NHƯ BIẾN TOÀN CỤC) ---
-# Cách làm này mô phỏng sự ổn định của notebook gốc:
-# các node được tạo một lần và sẵn sàng để sử dụng.
 print("Initializing ComfyUI nodes for imgcraft...")
 try:
     clip_loader = DualCLIPLoader()
@@ -50,10 +46,9 @@ except Exception as e:
     print(f"❌ Error initializing nodes: {e}")
 
 # --- PHẦN 3: LỚP EDITOR SỬ DỤNG CÁC NODE ĐÃ KHỞI TẠO ---
-# Lớp Editor giờ đây rất gọn gàng, chỉ tập trung vào logic xử lý.
 class Editor:
     def __init__(self, model_dir="/content/ComfyUI/models"):
-        self.model_dir = model_dir
+        self.model_dir = model_dir # Vẫn giữ lại để tham khảo nếu cần, nhưng không dùng để xây dựng đường dẫn nữa
         self.output_path = None
 
     def _clear_memory(self):
@@ -63,7 +58,6 @@ class Editor:
             torch.cuda.ipc_collect()
 
     def _save_image(self, image_tensor, prefix="output"):
-        # (Giữ nguyên code của hàm này)
         os.makedirs("/content/output", exist_ok=True)
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{prefix}_{timestamp}.png"
@@ -73,7 +67,6 @@ class Editor:
         return output_path
 
     def _resize_image(self, image_path, target_width=1360, target_height=2048):
-        # (Giữ nguyên code của hàm này)
         img = Image.open(image_path).convert("RGB")
         original_width, original_height = img.size
         ratio = min(target_width / original_width, target_height / original_height)
@@ -95,9 +88,11 @@ class Editor:
                 resized_path, width, height = self._resize_image(image_path)
                 print(f"Image processed to: {width}x{height}")
 
+                # SỬA LỖI: Chỉ truyền tên tệp, không truyền đường dẫn đầy đủ.
                 clip = clip_loader.load_clip(
-                    os.path.join(self.model_dir, "clip/t5xxl_fp8_e4m3fn.safetensors"),
-                    os.path.join(self.model_dir, "clip/clip_l.safetensors"), "flux"
+                    "t5xxl_fp8_e4m3fn.safetensors",
+                    "clip_l.safetensors",
+                    "flux"
                 )[0]
                 positive_prompt = "Manga cleaning, remove text, remove sfx"
                 prompt_encode = positive_prompt_encode.encode(clip, positive_prompt)[0]
@@ -106,17 +101,23 @@ class Editor:
                 self._clear_memory()
 
                 image_tensor = load_image_node.load_image(resized_path)[0]
-                vae = vae_loader.load_vae(os.path.join(self.model_dir, "vae/ae.sft"))[0]
+
+                # SỬA LỖI: Chỉ truyền tên tệp.
+                vae = vae_loader.load_vae("ae.sft")[0]
+
                 latent = vae_encode.encode(vae, image_tensor)[0]
                 conditioning = reference_latent.append(prompt_encode, latent)[0]
                 positive = flux_guidance.append(conditioning, 2.5)[0]
 
-                model = unet_loader.load_unet(os.path.join(self.model_dir, "unet/flux1-kontext-dev-Q6_K.gguf"))[0]
+                # SỬA LỖI: Chỉ truyền tên tệp.
+                model = unet_loader.load_unet("flux1-kontext-dev-Q6_K.gguf")[0]
+
+                # SỬA LỖI: Chỉ truyền tên tệp.
                 model = load_lora.load_lora_model_only(
-                    model, os.path.join(self.model_dir, "loras/flux_1_turbo_alpha.safetensors"), 1.0
+                    model, "flux_1_turbo_alpha.safetensors", 1.0
                 )[0]
                 model = load_lora.load_lora_model_only(
-                    model, os.path.join(self.model_dir, "loras/AniGa-CleMove-000005.safetensors"), 0.8
+                    model, "AniGa-CleMove-000005.safetensors", 0.8
                 )[0]
 
                 output_latent = empty_latent_image.generate(width, height, 1)[0]
