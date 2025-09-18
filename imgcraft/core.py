@@ -53,11 +53,13 @@ except Exception as e:
     sys.exit(1)
 
 # --- PHẦN 3: LỚP EDITOR ĐƯỢC TỐI ƯU HÓA CHO HIGH VRAM ---
-class ImgCraftEditor:
+# =========================================================
+# SỬA LỖI: Đổi tên lớp trở lại thành 'Editor'
+# =========================================================
+class Editor:
     def __init__(self):
         """
         Khởi tạo và tải TẤT CẢ các mô hình vào VRAM một lần duy nhất.
-        Quá trình này sẽ chậm và chiếm dụng nhiều VRAM, nhưng chỉ xảy ra một lần.
         """
         print("\n--- High VRAM Mode: Pre-loading all models into VRAM... ---")
         
@@ -85,8 +87,7 @@ class ImgCraftEditor:
 
     def process(self, image_pil: Image.Image, prompt: str = "Manga cleaning, remove text, remove sfx"):
         """
-        Xử lý ảnh đầu vào. Quá trình này sẽ rất nhanh vì tất cả các model
-        đã nằm sẵn trong VRAM.
+        Xử lý ảnh đầu vào.
         """
         width, height = image_pil.size
         print(f"\nProcessing image with resolution: {width}x{height}...")
